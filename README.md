@@ -75,34 +75,3 @@ GraphQL menggunakan tipe data yang jelas, sehingga cocok untuk komunikasi antar 
 4. Mendukung Query Fleksibel Antar Layanan
 
 Setiap layanan hanya mengirim data yang diminta, bukan seluruh response (seperti REST).
-
-```mermaid
-flowchart TB
-
-client[Ap likan Klien (Web/Mobile)] --> gateway[GraPHal Gateway API Orchestrator]
-
-%% Alur Login & Token
-gateway --> login[Login & Token]
-login --> auth[Auth Service]
-auth --> authToken[Login & Token]
-
-%% Layanan User Service
-login --> userService[User Service]
-
-%% Kueri GraphQL
-gateway -->|Kueri GraPHQL Tunggal| login
-
-%% Pemanggilan IPC
-authToken -->|Panggilan IPC (Auth Service)| srder[Srder Service]
-srder -->|Papallan IPC| dataUser[Data User]
-
-userService -->|Panggilan IPC (Data Pesanan)| order[Order Pesanan]
-
-%% Respons
-dataUser -->|Respons JSON Gabngen| respUser[Data User]
-order -->|Respons JSON| respOrder[Data Pesanan]
-
-%% Output ke Klien
-respUser --> out((Respons JSON))
-respOrder --> out
-```
