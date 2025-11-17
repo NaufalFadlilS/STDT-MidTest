@@ -1,136 +1,96 @@
-mkdir -p uts-distributed-systems
-cd uts-distributed-systems
+1. Teorema CAP dan BASE + Keterkaitan + Contoh
+Teorema CAP
 
-mkdir -p primary replica
-mkdir -p primary/data
-mkdir -p replica/data
+Teorema CAP (Consistency, Availability, Partition Tolerance) menyatakan bahwa pada sistem terdistribusi hanya dua dari tiga properti berikut yang dapat dijamin secara bersamaan:
 
-cat > docker-compose.yml <<'EOF'
-version: "3.8"
+• Consistency (C)
 
-services:
-  postgres-primary:
-    image: postgres:14
-    container_name: postgres-primary
-    environment:
-      - POSTGRES_PASSWORD=primarypass
-      - POSTGRES_USER=postgres
-      - PGDATA=/var/lib/postgresql/data
-    volumes:
-      - ./primary/data:/var/lib/postgresql/data
-      - ./primary/postgresql.conf:/var/lib/postgresql/data/postgresql.conf
-      - ./primary/pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf
-      - ./primary/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh:ro
-    ports:
-      - "5432:5432"
-    command: ["-c", "config_file=/var/lib/postgresql/data/postgresql.conf"]
+Semua node memiliki data yang sama pada waktu yang sama (strong consistency).
 
-  postgres-replica:
-    build: ./replica
-    container_name: postgres-replica
-    environment:
-      - POSTGRES_PASSWORD=primarypass
-      - PGDATA=/var/lib/postgresql/data
-    volumes:
-      - ./replica/data:/var/lib/postgresql/data
-      - ./replica/start-replica.sh:/usr/local/bin/start-replica.sh:ro
-    depends_on:
-      - postgres-primary
-    ports:
-      - "5433:5432"
-EOF
+• Availability (A)
 
-cat > primary/postgresql.conf <<'EOF'
-listen_addresses = '*'
-port = 5432
-max_wal_senders = 10
-wal_level = replica
-synchronous_commit = off
-hot_standby = on
-archive_mode = off
-EOF
+Setiap permintaan selalu mendapatkan respons, meskipun respons tidak selalu konsisten.
 
-cat > primary/pg_hba.conf <<'EOF'
-local   all             all                                     trust
-host    all             all             0.0.0.0/0               trust
-host    replication     all             0.0.0.0/0               trust
-EOF
+• Partition Tolerance (P)
 
-cat > primary/init-replication.sh <<'EOF'
-#!/bin/bash
-set -e
+Sistem tetap berfungsi meskipun terjadi gangguan atau putusnya jaringan antar node.
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
-  CREATE ROLE repuser WITH REPLICATION LOGIN PASSWORD 'reppass';
-  CREATE DATABASE demo;
-  \connect demo
-  CREATE TABLE messages (id serial PRIMARY KEY, body text, created_at timestamptz DEFAULT now());
-  INSERT INTO messages (body) VALUES ('Hello from primary');
-EOSQL
-EOF
+Karena partition selalu mungkin terjadi, maka sistem terdistribusi harus memilih:
 
-cat > replica/Dockerfile <<'EOF'
-FROM postgres:14
-COPY start-replica.sh /usr/local/bin/start-replica.sh
-RUN chmod +x /usr/local/bin/start-replica.sh
-ENTRYPOINT ["/usr/local/bin/start-replica.sh"]
-EOF
+CP → Konsisten, tapi jika jaringan terputus, sebagian layanan berhenti.
 
-cat > replica/start-replica.sh <<'EOF'
-#!/bin/bash
-set -e
+AP → Tetap tersedia, tapi data mungkin tidak konsisten sementara.
 
-PRIMARY_HOST="postgres-primary"
-PRIMARY_PORT=5432
-REPL_USER="repuser"
-REPL_PASSWORD="reppass"
-PGDATA=${PGDATA:-/var/lib/postgresql/data}
+Teorema BASE
 
-echo "Waiting for primary ${PRIMARY_HOST}:${PRIMARY_PORT}..."
-until pg_isready -h "${PRIMARY_HOST}" -p "${PRIMARY_PORT}" -U postgres >/dev/null 2>&1; do
-  sleep 1
-done
-echo "Primary is ready."
+BASE adalah karakteristik sistem NoSQL dan kebalikan dari ACID.
 
-if [ ! -s "${PGDATA}/PG_VERSION" ]; then
-  echo "Initializing replica data directory with pg_basebackup..."
+Komponen BASE:
+Komponen	Penjelasan
+Basically Available	Sistem selalu memberi respons cepat
+Soft State	Data tidak harus konsisten sepanjang waktu
+Eventually Consistent	Konsistensi akan tercapai setelah beberapa waktu
+Hubungan CAP dan BASE
 
-  rm -rf "${PGDATA:?}/"*
+BASE selaras dengan model AP dalam CAP:
 
-  export PGPASSWORD=${REPL_PASSWORD}
-  pg_basebackup -h "${PRIMARY_HOST}" -p "${PRIMARY_PORT}" -D "${PGDATA}" -U "${REPL_USER}" -Fp -Xs -P -R
+Sistem tetap tersedia (Availability)
 
-  echo "Base backup complete."
-else
-  echo "PGDATA exists, starting postgres normally."
-fi
+Sistem bertahan dari gangguan jaringan (Partition Tolerance)
 
-exec docker-entrypoint.sh postgres
-EOF
+Konsistensi diberikan belakangan (Eventually Consistent)
 
-cat > README.md <<'EOF'
-# uts-distributed-systems
+Contoh yang Saya Gunakan (Real Case)
 
-Streaming replication PostgreSQL menggunakan Docker Compose.
+Redis Cache
 
-## Cara pakai:
-1. chmod +x primary/init-replication.sh replica/start-replica.sh
-2. docker compose up --build
+Ketika membaca data, Redis memberikan jawaban sangat cepat, meskipun data terkadang belum 100% sinkron dengan database utama. Artinya:
 
-## Testing:
-Primary:
-  psql -h localhost -p 5432 -U postgres -d demo -c "select * from messages;"
+Redis mengutamakan Availability (A) + Partition Tolerance (P)
 
-Replica:
-  psql -h localhost -p 5433 -U postgres -d demo -c "select * from messages;"
-EOF
+Konsistensi diperbaiki kemudian (eventual consistency)
 
-cat > .gitignore <<'EOF'
-primary/data/
-replica/data/
-*.log
-EOF
+Ini adalah contoh nyata hubungan CAP (AP) dan BASE.
 
-chmod +x primary/init-replication.sh
-chmod +x replica/start-replica.sh
+2. Keterkaitan GraphQL dengan Komunikasi Antar Proses pada Sistem Terdistribusi
+Hubungan GraphQL dengan IPC (Inter-Process Communication)
 
+GraphQL bukan hanya query language untuk API, tetapi juga dapat digunakan sebagai protokol komunikasi antar layanan dalam sistem terdistribusi.
+
+GraphQL memperbaiki komunikasi IPC dengan cara:
+1. Contract-Based Communication
+
+GraphQL memiliki schema → layanan lain dapat mengetahui struktur data secara pasti.
+Ini memudahkan koordinasi antar microservices.
+
+2. Mengurangi Chatty Communication
+
+Tanpa GraphQL, proses sering melakukan banyak GET ke berbagai endpoint REST.
+Dengan GraphQL → satu query dapat mengambil berbagai data sekaligus.
+
+3. Typed Communication (Schema)
+
+GraphQL menggunakan tipe data yang jelas, sehingga cocok untuk komunikasi antar proses yang memerlukan struktur data stabil.
+
+4. Mendukung Query Fleksibel Antar Layanan
+
+Setiap layanan hanya mengirim data yang diminta, bukan seluruh response (seperti REST).
+
+Diagram Komunikasi GraphQL antar Proses
+flowchart LR
+    A([Client / Frontend]) -->|GraphQL Query| B([GraphQL Gateway<br>API Orchestrator])
+
+    B --> C{Route Request?}
+
+    C -->|Auth| D([Auth Service<br>Login & Token])
+    C -->|User| E([User Service<br>Data User])
+    C -->|Order| F([Order Service<br>Data Pesanan])
+    C -->|Stock| G([Stock Service<br>Data Stok])
+
+    classDef box fill:#ffffff,stroke:#e63946,stroke-width:2px,color:#000;
+    classDef boxBlue fill:#ffffff,stroke:#1d3557,stroke-width:2px,color:#000;
+    classDef decision fill:#fff,stroke:#6c5ce7,stroke-width:2px,color:#000;
+
+    class A,B boxBlue;
+    class D,E,F,G box;
+    class C decision;
