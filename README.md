@@ -76,21 +76,33 @@ GraphQL menggunakan tipe data yang jelas, sehingga cocok untuk komunikasi antar 
 
 Setiap layanan hanya mengirim data yang diminta, bukan seluruh response (seperti REST).
 
-Diagram Komunikasi GraphQL antar Proses
-flowchart LR
-    A([Client / Frontend]) -->|GraphQL Query| B([GraphQL Gateway<br>API Orchestrator])
+```mermaid
+flowchart TB
 
-    B --> C{Route Request?}
+client[Ap likan Klien (Web/Mobile)] --> gateway[GraPHal Gateway API Orchestrator]
 
-    C -->|Auth| D([Auth Service<br>Login & Token])
-    C -->|User| E([User Service<br>Data User])
-    C -->|Order| F([Order Service<br>Data Pesanan])
-    C -->|Stock| G([Stock Service<br>Data Stok])
+%% Alur Login & Token
+gateway --> login[Login & Token]
+login --> auth[Auth Service]
+auth --> authToken[Login & Token]
 
-    classDef box fill:#ffffff,stroke:#e63946,stroke-width:2px,color:#000;
-    classDef boxBlue fill:#ffffff,stroke:#1d3557,stroke-width:2px,color:#000;
-    classDef decision fill:#fff,stroke:#6c5ce7,stroke-width:2px,color:#000;
+%% Layanan User Service
+login --> userService[User Service]
 
-    class A,B boxBlue;
-    class D,E,F,G box;
-    class C decision;
+%% Kueri GraphQL
+gateway -->|Kueri GraPHQL Tunggal| login
+
+%% Pemanggilan IPC
+authToken -->|Panggilan IPC (Auth Service)| srder[Srder Service]
+srder -->|Papallan IPC| dataUser[Data User]
+
+userService -->|Panggilan IPC (Data Pesanan)| order[Order Pesanan]
+
+%% Respons
+dataUser -->|Respons JSON Gabngen| respUser[Data User]
+order -->|Respons JSON| respOrder[Data Pesanan]
+
+%% Output ke Klien
+respUser --> out((Respons JSON))
+respOrder --> out
+```
