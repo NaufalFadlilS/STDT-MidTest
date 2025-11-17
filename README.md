@@ -75,3 +75,99 @@ GraphQL menggunakan tipe data yang jelas, sehingga cocok untuk komunikasi antar 
 4. Mendukung Query Fleksibel Antar Layanan
 
 Setiap layanan hanya mengirim data yang diminta, bukan seluruh response (seperti REST).
+
+```mermaid
+flowchart TB
+
+    client[Client Application] --> gateway[GraphQL Gateway]
+
+    gateway --> login[Login & Token]
+    login --> authService[Auth Service]
+    authService --> authIPC[IPC: Auth Validation]
+
+    login --> userService[User Service]
+    userService --> userIPC[IPC: Data User]
+
+    userService --> orderIPC[IPC: Data Pesanan]
+
+    userIPC --> userResponse[JSON: Data User]
+    orderIPC --> orderResponse[JSON: Data Pesanan]
+
+    userResponse --> finalResponse((Merged JSON Response))
+    orderResponse --> finalResponse
+```
+
+3. Dengan menggunakan Docker / Docker Compose, buatlah streaming replication di PostgreSQL yang bisa menjelaskan sinkronisasi. Tulislah langkah-langkah pengerjaannya dan buat penjelasan secukupnya.
+
+   .github/workflows/replication.yml
+
+   name: PostgreSQL Streaming Replication Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-replication:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Create docker-compose.yml
+        run: |
+          cat << 'EOF' > docker-compose.yml
+          version: '3.9'
+
+          services:
+            postgres-primary:
+              image: postgres:15
+              container_name: postgres-primary
+              environment:
+                POSTGRES_PASSWORD: password
+                POSTGRES_USER: postgres
+                POSTGRES_DB: mydb
+              ports:
+                - "5432:5432"
+              command: >
+                bash -c "
+                  echo 'wal_level=replica' >> /var/lib/postgresql/data/postgresql.conf &&
+                  echo 'max_wal_senders=10' >> /var/lib/postgresql/data/postgresql.conf &&
+                  echo 'max_replication_slots=10' >> /var/lib/postgresql/data/postgresql.conf &&
+                  docker-entrypoint.sh postgres
+                "
+
+            postgres-replica:
+              image: postgres:15
+              container_name: postgres-replica
+              environment:
+                POSTGRES_PASSWORD: password
+                POSTGRES_USER: postgres
+              depends_on:
+                - postgres-primary
+              ports:
+                - "5433:5432"
+              command: >
+                bash -c "
+                  rm -rf /var/lib/postgresql/data/* &&
+                  PGPASSWORD=password pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U postgres -Fp -Xs -P -R &&
+                  docker-entrypoint.sh postgres
+                "
+          EOF
+
+      - name: Start Docker Services
+        run: docker-compose up -d
+
+      - name: Wait for PostgreSQL to Initialize
+        run: sleep 20
+
+      - name: Test Replication - Insert Data on Primary
+        run: |
+          docker exec postgres-primary psql -U postgres -c "CREATE TABLE test_rep(id INT, data TEXT);"
+          docker exec postgres-primary psql -U postgres -c "INSERT INTO test_rep VALUES (1, 'Halo dari PRIMARY');"
+
+      - name: Test Replication - Check Data on Replica
+        run: |
+          docker exec postgres-replica psql -U postgres -c "SELECT * FROM test_rep;"
+
+   
