@@ -1,4 +1,5 @@
 Nama    :    Naufal Fadlil Saputra
+
 NIM    :    245410060
 
 1. Teorema CAP dan BASE + Keterkaitan + Contoh
